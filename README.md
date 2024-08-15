@@ -28,6 +28,12 @@
 
 ## 4. 安排
 
+**preliminary work:**
+
+* [https://zhuanlan.zhihu.com/p/621188598](https://zhuanlan.zhihu.com/p/621188598)
+* [https://github.com/jhayes14/adversarial-patch](https://github.com/jhayes14/adversarial-patch)
+* [https://arxiv.org/pdf/1712.09665](https://arxiv.org/pdf/1712.09665)
+
 **初赛：**
 
 * 合适的base或者弄一个基础工程

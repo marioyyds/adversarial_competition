@@ -1,0 +1,1 @@
+python patch_attack.py --cuda --netClassifier inceptionv3 --max_count 500 --image_size 299 --patch_type circle --outf log --cuda

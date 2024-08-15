@@ -1,3 +1,5 @@
 *pycache*
 *.pth
 *checkpoint*
+log
+logs
