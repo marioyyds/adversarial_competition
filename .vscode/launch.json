@@ -5,11 +5,12 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: Current File",
+            "name": "(37777-dh) Python Debugger: Current File",
             "type": "debugpy",
             "request": "launch",
             "program": "${file}",
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "python": "/data/hdd3/duhao/miniconda3/envs/rift/bin/python"
         }
     ]
 }

@@ -34,6 +34,7 @@
   * [https://github.com/huggingface/pytorch-image-models](https://github.com/huggingface/pytorch-image-models)
   * [https://github.com/open-mmlab/mmpretrain](https://github.com/open-mmlab/mmpretrain)
   * [https://github.com/pytorch/vision](https://github.com/pytorch/vision)
+  * [https://github.com/jhayes14/adversarial-patch/tree/master](https://github.com/jhayes14/adversarial-patch/tree/master)
 * 训练分类模型
 * 攻击方法（patch、noise等）选择
 

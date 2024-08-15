@@ -2,6 +2,13 @@ import os
 import sys
 
 from torchvision.datasets.folder import default_loader
+# 获取当前文件的路径
+current_path = os.path.dirname(os.path.abspath(__file__))
+
+# 将当前文件路径加入到 sys.path
+sys.path.append(current_path)
+sys.path.append(current_path + "/..")
+print(sys.path)
 import torch
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
@@ -192,3 +199,4 @@ for epoch in range(start_epoch, start_epoch+200):
     train(epoch)
     test(epoch)
     scheduler.step()
+
