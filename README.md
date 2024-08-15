@@ -33,6 +33,8 @@
 * [https://zhuanlan.zhihu.com/p/621188598](https://zhuanlan.zhihu.com/p/621188598)
 * [https://github.com/jhayes14/adversarial-patch](https://github.com/jhayes14/adversarial-patch)
 * [https://arxiv.org/pdf/1712.09665](https://arxiv.org/pdf/1712.09665)
+* [https://github.com/marioyyds/EMA?tab=readme-ov-file](https://github.com/marioyyds/EMA?tab=readme-ov-file)
+* [https://paperswithcode.com/paper/adversarial-patch](https://paperswithcode.com/paper/adversarial-patch)
 
 **初赛：**
 
@@ -44,7 +46,17 @@
 * 训练分类模型
 * 攻击方法（patch、noise等）选择
 
-思考：
+**思路：**
+
+* 训练分类模型（CNN、VIT都得试一下）
+* 在分类模型基础上，选择攻击算法（PGD、Patch）
+
+QA：
 
 * 攻击的模型是否本身就具有对抗性？
 * 这儿的攻击是黑盒攻击，是否可参考之前workshop，使用ensemble？
+
+**TODO:**
+
+* 相关对抗比赛，以别人的方案作为base
+* 查找相关论文
