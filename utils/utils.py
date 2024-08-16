@@ -20,7 +20,16 @@ from os import path
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.ndimage.interpolation import rotate
+import os
+import sys
 
+from torch.utils.data import DataLoader, random_split
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.backends.cudnn as cudnn
+import argparse
+from torchvision.models import *
+from .custom_dataset import CustomDataset
 
 def get_mean_and_std(dataset):
     '''Compute the mean and std value of dataset.'''
@@ -256,3 +265,107 @@ def square_transform(patch, data_shape, patch_shape, image_size):
     mask[mask != 0] = 1.0
     
     return x, mask
+
+
+def get_parser():
+    parser = argparse.ArgumentParser(description='Classfication Model Training')
+    parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
+    parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
+    parser.add_argument('--arch', default="resnet18", choices=['resnet18', 'resnet34', 'resnet50', 'vit', 'inception_v3'],help='the network architecture')
+    parser.add_argument('--gpu', default="0", type=str, help='which gpus are available')
+    parser.add_argument('--batch_size', default=128, type=int, help='batch size')
+    parser.add_argument('--train_set', default='/data/hdd3/duhao/data/datasets/attack_dataset/phase1/train_set', type=str, help='train set path')
+    parser.add_argument('--test_set', default='/data/hdd3/duhao/data/datasets/attack_dataset/phase1/test_set', type=str, help='test set path')
+    args = parser.parse_args()
+    return args
+
+def get_loader(args):
+    # Data
+    print('==> Preparing data..')
+
+    # 设置图像的路径
+    train_data_path = args.train_set
+    test_data_path = args.test_set
+
+    if args.arch in ["resnet18", "vit", "resnet34", "resnet50"]:
+        transform_train = transforms.Compose([
+            transforms.Resize((224, 224)), 
+            transforms.RandomCrop(224, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+
+        transform_test = transforms.Compose([
+            transforms.Resize((224, 224)), 
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+
+        # 使用ImageFolder加载数据
+        # train_dataset = datasets.ImageFolder(root=train_data_path, transform=transform_train)
+        # test_dataset = datasets.ImageFolder(root=test_data_path, transform=transform_test)
+
+        # 使用自定义的Dataset，这会将数据集提前加载到内存以提高速度
+        train_dataset = CustomDataset(root=train_data_path, transform=transform_train)
+        test_dataset = CustomDataset(root=test_data_path, transform=transform_test)
+    elif args.arch == "inception_v3":
+        transform_train = transforms.Compose([
+            transforms.Resize((299, 299)), 
+            transforms.RandomCrop(299, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+
+        transform_test = transforms.Compose([
+            transforms.Resize((224, 224)), 
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+
+        # 使用ImageFolder加载数据
+        # train_dataset = datasets.ImageFolder(root=train_data_path, transform=transform_train)
+        # test_dataset = datasets.ImageFolder(root=test_data_path, transform=transform_test)
+
+        # 使用自定义的Dataset，这会将数据集提前加载到内存以提高速度
+        train_dataset = CustomDataset(root=train_data_path, transform=transform_train)
+        test_dataset = CustomDataset(root=test_data_path, transform=transform_test)
+
+    else:
+        raise ValueError(f"Unsupported architecture: {args.arch}")
+        # 打印一些信息
+    print(f"训练集大小: {len(train_dataset)}")
+    print(f"测试集大小: {len(test_dataset)}")
+
+    # 创建DataLoader用于加载数据
+    trainloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=8)
+    testloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=8)
+
+    return trainloader, testloader
+
+def get_model(args, device):
+
+    print('==> Building model..')
+    if args.arch == "resnet18":
+        model = resnet18()
+        model.fc = nn.Linear(model.fc.in_features, 20)
+    elif args.arch == "resnet34":
+        model = resnet34()
+        model.fc = nn.Linear(model.fc.in_features, 20)
+    elif args.arch == "resnet50":
+        model = resnet50()
+        model.fc = nn.Linear(model.fc.in_features, 20)
+    elif args.arch == "vit":
+        model = vit_b_16()
+        model.heads = nn.Linear(model.heads.head.in_features, 20) 
+    elif args.arch == "inception_v3":
+        model = inception_v3()
+        model.fc = nn.Linear(model.fc.in_features, 20)
+    else:
+        raise ValueError(f"Unsupported architecture: {args.arch}")
+
+    if device == 'cuda':
+        model = torch.nn.DataParallel(model)
+        cudnn.benchmark = True
+    return model

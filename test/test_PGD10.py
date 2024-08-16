@@ -98,7 +98,6 @@ def process_images(model, device):
     # train_dataset = datasets.ImageFolder(root=train_data_path, transform=transform_train)
     # test_dataset = datasets.ImageFolder(root=test_data_path, transform=transform_test)
 
-  
     test_dataset = CustomDataset(root='/data/hdd3/duhao/data/datasets/attack_dataset/clean_cls_samples', transform=transform_test)
    
     print(f"测试集大小: {len(test_dataset)}")
