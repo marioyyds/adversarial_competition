@@ -8,6 +8,38 @@ from PIL import Image
 import numpy as np
 from torchvision.models import *
 from tqdm import tqdm
+import torch.backends.cudnn as cudnn
+from typing import Any, Callable, cast, Dict, List, Optional, Tuple, Union
+from torchvision.datasets.folder import default_loader
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from torch.utils.data import DataLoader, random_split
+
+class CustomDataset(datasets.ImageFolder):
+    def __init__(self, root: str, transform: Union[Callable[..., Any], None] = None,
+                 target_transform: Union[Callable[..., Any], None] = None,
+                 loader: Callable[[str], Any] = default_loader,
+                 is_valid_file: Union[Callable[[str], bool], None] = None, 
+                 num_threads: int = 32):
+        super().__init__(root, transform, target_transform, loader, is_valid_file)
+        self.data = []
+        self.num_threads = num_threads
+        self._load_data()
+    
+    def _load_data(self):
+        with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
+            futures = {executor.submit(self.loader, sample_path): (target, sample_path) for sample_path, target in self.samples}
+            for future in as_completed(futures):
+                img = future.result()
+                target = futures[future]
+                self.data.append((img, target))
+    
+    def __len__(self) -> int:
+        return super().__len__()
+    
+    def __getitem__(self, index: int) -> Tuple[Any, int]:
+
+        return self.transform(self.data[index][0]), self.data[index][1]
+
 
 class Normalize(nn.Module):
     def __init__(self, mean, std) :
@@ -22,80 +54,85 @@ class Normalize(nn.Module):
         return (input - mean) / std
 
 
-# PGD10攻击的实现
-def pgd_attack(model, images, labels, eps=0.03, alpha=0.01, num_iter=10):
-    images = images.clone().detach().requires_grad_(True).to(device)
-    labels = labels.to(device)
-    loss = torch.nn.CrossEntropyLoss()
+def pgd_attack(model, images, labels, device, eps=32. / 255., alpha=2. / 255., iters=10, advFlag=None, forceEval=True, randomInit=True):
+    loss = nn.CrossEntropyLoss()
 
-    for i in range(num_iter):
-        outputs = model(images)
+    if randomInit:
+        delta = torch.rand_like(images) * eps * 2 - eps
+    else:
+        delta = torch.zeros_like(images)
+    delta = torch.nn.Parameter(delta, requires_grad=True)
+
+    for i in range(iters):
+        if advFlag is None:
+            if forceEval:
+                model.eval()
+            outputs = model(images + delta)
+        else:
+            if forceEval:
+                model.eval()
+            outputs = model(images + delta, advFlag)
+
         model.zero_grad()
-        cost = loss(outputs, labels).to(device)
-        cost.backward()
-        
-        adv_images = images + alpha * images.grad.sign()
-        eta = torch.clamp(adv_images - images, min=-eps, max=eps)
-        images = torch.clamp(images + eta, min=0, max=1).detach_()
-        images.requires_grad = True
+        cost = loss(outputs, labels)
+        # cost.backward()
+        delta_grad = torch.autograd.grad(cost, [delta])[0]
 
-    return images
+        delta.data = delta.data + alpha * delta_grad.sign()
+        delta.grad = None
+        delta.data = torch.clamp(delta.data, min=-eps, max=eps)
+        delta.data = torch.clamp(images + delta.data, min=0, max=1) - images
+
+    model.zero_grad()
+
+    return (images + delta).detach()
 
 # 递归处理文件夹及其子文件夹
-def process_images(input_dir, output_base_dir, model):
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),  # 修改为网络所需尺寸
+def process_images(model, device):
+    transform_test = transforms.Compose([
+        transforms.Resize((224, 224)), 
         transforms.ToTensor(),
     ])
+
+    # 使用ImageFolder加载数据
+    # train_dataset = datasets.ImageFolder(root=train_data_path, transform=transform_train)
+    # test_dataset = datasets.ImageFolder(root=test_data_path, transform=transform_test)
+
+  
+    test_dataset = CustomDataset(root='/data/hdd3/duhao/data/datasets/attack_dataset/clean_cls_samples', transform=transform_test)
+   
+    print(f"测试集大小: {len(test_dataset)}")
+
+    # 创建DataLoader用于加载数据
+    testloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=8)
     
-    for root, dirs, files in os.walk(input_dir):
-        # 获取相对于 input_dir 的路径
-        relative_path = os.path.relpath(root, input_dir)
-        output_dir = os.path.join(output_base_dir, relative_path)
-
-        # 创建对应的输出文件夹
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-
-        # 遍历文件夹中的所有图片文件
-        for img_file in tqdm(files):
-            img_path = os.path.join(root, img_file)
-            try:
-                img = Image.open(img_path).convert('RGB')
-            except Exception as e:
-                print(f"无法打开图片 {img_path}，错误: {e}")
-                continue
-
-            img_tensor = transform(img).unsqueeze(0).to(device)
-
-            # 假设我们有标签，或者对目标模型使用相应的推理获得标签
-            labels = torch.tensor([0]).to(device)  # 修改为实际标签
-            
-            # 使用PGD攻击
-            adv_img = pgd_attack(model, img_tensor, labels)
-
-            # 保存攻击后的图片
-            output_img_path = os.path.join(output_dir, img_file)
-            save_image(adv_img, output_img_path)
+    for data, (label, path) in tqdm(testloader):
+        data = data.to(device)
+        label = label.to(device)
+        adv_img = pgd_attack(model, data, label, device=device)
+        output_img_path = path[0].replace("clean_cls_samples", "adv_samples")
+        
+        output_dir_path = os.path.dirname(output_img_path)
+        if not os.path.exists(output_dir_path):
+            os.makedirs(output_dir_path)
+        save_image(adv_img, output_img_path)
 
 # 示例使用
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 print("=> creating model ")
 netClassifier = resnet18()
 netClassifier.fc = nn.Linear(netClassifier.fc.in_features, 20)
 
+if device == 'cuda':
+    netClassifier = torch.nn.DataParallel(netClassifier)
+    cudnn.benchmark = True
+
 checkpoint = torch.load('./checkpoint/resnet18.pth')
-new_checkpoint = {}
-for key, val in  checkpoint['net'].items():
-    key = key.replace('module.', '')
-    new_checkpoint[key] = val
-netClassifier.load_state_dict(new_checkpoint)
+
+netClassifier.load_state_dict(checkpoint["net"])
 netClassifier.to(device)
 
 netClassifier = nn.Sequential(Normalize(mean=[0.4914, 0.4822, 0.4465], std=[0.2471, 0.2435, 0.2616]), netClassifier)
 
-input_dir = '/data/hdd3/duhao/data/datasets/attack_dataset/clean_cls_samples'  # 原始图片文件夹
-output_dir = '/data/hdd3/duhao/data/datasets/attack_dataset/adv_samples'  # 对抗图片保存文件夹
-
-process_images(input_dir, output_dir, netClassifier)
+process_images(netClassifier, device)
