@@ -344,28 +344,33 @@ def get_loader(args):
 
     return trainloader, testloader
 
-def get_model(args, device):
-
-    print('==> Building model..')
-    if args.arch == "resnet18":
+def get_architecture(arch, device):
+    if arch == "resnet18":
         model = resnet18()
         model.fc = nn.Linear(model.fc.in_features, 20)
-    elif args.arch == "resnet34":
+    elif arch == "resnet34":
         model = resnet34()
         model.fc = nn.Linear(model.fc.in_features, 20)
-    elif args.arch == "resnet50":
+    elif arch == "resnet50":
         model = resnet50()
         model.fc = nn.Linear(model.fc.in_features, 20)
-    elif args.arch == "vit":
+    elif arch == "vit":
         model = vit_b_16()
         model.heads = nn.Linear(model.heads.head.in_features, 20) 
-    elif args.arch == "inception_v3":
+    elif arch == "inception_v3":
         model = inception_v3()
         model.fc = nn.Linear(model.fc.in_features, 20)
     else:
-        raise ValueError(f"Unsupported architecture: {args.arch}")
+        raise ValueError(f"Unsupported architecture: {arch}")
 
     if device == 'cuda':
         model = torch.nn.DataParallel(model)
         cudnn.benchmark = True
+    return model
+
+def get_model(args, device):
+
+    print('==> Building model..')
+    model = get_architecture(args.arch, device)
+    
     return model
