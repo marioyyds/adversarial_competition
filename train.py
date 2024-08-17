@@ -98,7 +98,7 @@ if __name__ == "__main__":
                         momentum=0.9, weight_decay=5e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
 
-    for epoch in range(start_epoch, start_epoch+200):
+    for epoch in range(start_epoch, args.epoch):
         train(epoch, args, device)
         test(epoch, args, device)
         scheduler.step()

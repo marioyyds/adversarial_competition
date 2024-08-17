@@ -30,6 +30,7 @@ import torch.backends.cudnn as cudnn
 import argparse
 from torchvision.models import *
 from .custom_dataset import CustomDataset
+from timm import create_model
 
 def get_mean_and_std(dataset):
     '''Compute the mean and std value of dataset.'''
@@ -271,9 +272,11 @@ def get_parser():
     parser = argparse.ArgumentParser(description='Classfication Model Training')
     parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
     parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
-    parser.add_argument('--arch', default="resnet18", choices=['resnet18', 'resnet34', 'resnet50', 'vit', 'inception_v3', 'vgg16', 'mobilenet_v2', 'mobilenet_v3', 'swint', 'googlenet'],help='the network architecture')
+    parser.add_argument('--arch', default="resnet18", type=str,help='the network architecture')
     parser.add_argument('--gpu', default="0", type=str, help='which gpus are available')
+    parser.add_argument('--epoch', default=200, type=int, help='how many epoch to train')
     parser.add_argument('--batch_size', default=128, type=int, help='batch size')
+    parser.add_argument('--num_worker', default=8, type=int, help='number of workers')
     parser.add_argument('--train_set', default='/data/hdd3/duhao/data/datasets/attack_dataset/phase1/train_set', type=str, help='train set path')
     parser.add_argument('--test_set', default='/data/hdd3/duhao/data/datasets/attack_dataset/phase1/test_set', type=str, help='test set path')
     args = parser.parse_args()
@@ -287,29 +290,7 @@ def get_loader(args):
     train_data_path = args.train_set
     test_data_path = args.test_set
 
-    if args.arch in ["resnet18", "vit", "resnet34", "resnet50", "vgg16", "mobilenet_v2", "mobilenet_v3", "swint", "googlenet"]:
-        transform_train = transforms.Compose([
-            transforms.Resize((224, 224)), 
-            transforms.RandomCrop(224, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ])
-
-        transform_test = transforms.Compose([
-            transforms.Resize((224, 224)), 
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ])
-
-        # 使用ImageFolder加载数据
-        # train_dataset = datasets.ImageFolder(root=train_data_path, transform=transform_train)
-        # test_dataset = datasets.ImageFolder(root=test_data_path, transform=transform_test)
-
-        # 使用自定义的Dataset，这会将数据集提前加载到内存以提高速度
-        train_dataset = CustomDataset(root=train_data_path, transform=transform_train)
-        test_dataset = CustomDataset(root=test_data_path, transform=transform_test)
-    elif args.arch == "inception_v3":
+    if args.arch == "inception_v3":
         transform_train = transforms.Compose([
             transforms.Resize((299, 299)), 
             transforms.RandomCrop(299, padding=4),
@@ -331,16 +312,36 @@ def get_loader(args):
         # 使用自定义的Dataset，这会将数据集提前加载到内存以提高速度
         train_dataset = CustomDataset(root=train_data_path, transform=transform_train)
         test_dataset = CustomDataset(root=test_data_path, transform=transform_test)
-
     else:
-        raise ValueError(f"Unsupported architecture: {args.arch}")
+        transform_train = transforms.Compose([
+            transforms.Resize((224, 224)), 
+            transforms.RandomCrop(224, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+
+        transform_test = transforms.Compose([
+            transforms.Resize((224, 224)), 
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+
+        # 使用ImageFolder加载数据
+        # train_dataset = datasets.ImageFolder(root=train_data_path, transform=transform_train)
+        # test_dataset = datasets.ImageFolder(root=test_data_path, transform=transform_test)
+
+        # 使用自定义的Dataset，这会将数据集提前加载到内存以提高速度
+        train_dataset = CustomDataset(root=train_data_path, transform=transform_train)
+        test_dataset = CustomDataset(root=test_data_path, transform=transform_test)
+
         # 打印一些信息
     print(f"训练集大小: {len(train_dataset)}")
     print(f"测试集大小: {len(test_dataset)}")
 
     # 创建DataLoader用于加载数据
-    trainloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=8)
-    testloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=8)
+    trainloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_worker)
+    testloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_worker)
 
     return trainloader, testloader
 
@@ -378,7 +379,7 @@ def get_architecture(arch, device):
         model = googlenet()
         model.fc = nn.Linear(model.fc.in_features, 20)
     else:
-        raise ValueError(f"Unsupported architecture: {arch}")
+        model = create_model(arch, pretrained=True, num_classes=20)
 
     if device == 'cuda':
         model = torch.nn.DataParallel(model)

@@ -104,7 +104,7 @@ if __name__ == '__main__':
 
     print("Model to generate adv examples")
     # delete one model if OOM (all 8 models need around 12G)
-    model_name_list = ['resnet18', 'resnet34', 'inception_v3', 'swint']
+    model_name_list = ['resnet18', 'resnet34', 'inception_v3', 'efficientnet_b0.ra4_e3600_r224_in1k']
     model_input_size = [224, 224, 229, 224]
     print(model_name_list)
     model_list = []
@@ -123,7 +123,7 @@ if __name__ == '__main__':
 
     # eval model
     print("Model to predict adv examples's confidence")
-    model_name_list = ['mobilenet_v2', 'googlenet']
+    model_name_list = ['mobilenet_v2']
     model_input_size = [224]
     print(model_name_list)
     model_list = []

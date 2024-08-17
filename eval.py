@@ -30,7 +30,7 @@ def get_loader(args):
     print(f"测试集大小: {len(test_dataset)}")
 
     # 创建DataLoader用于加载数据
-    testloader = DataLoader(test_dataset, batch_size=128, shuffle=False, num_workers=8)
+    testloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_worker)
 
     return testloader
 
