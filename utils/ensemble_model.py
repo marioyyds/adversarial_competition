@@ -6,14 +6,13 @@ import torch.nn.functional as F
 
 class Ensemble_logits(nn.Module):
 
-    def __init__(self, model_list, Num_classes=1000, prob=0.7, mode="nearest"):
+    def __init__(self, model_list, input_size=[], prob=0.7, mode="nearest"):
         super(Ensemble_logits, self).__init__()
         self.model_list = model_list
         self.length = len(self.model_list)
-        self.classes = Num_classes
         self.prob = prob
         self.mode = mode
-        self.input_size = [224, 224,229] # resnet18, resnet34, inceptionv3
+        self.input_size = input_size # resnet18, resnet34, inceptionv3
 
     def resize(self, input, target_size):
         return F.interpolate(input, size=target_size, mode=self.mode)

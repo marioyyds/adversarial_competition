@@ -104,7 +104,8 @@ if __name__ == '__main__':
 
     print("Model to generate adv examples")
     # delete one model if OOM (all 8 models need around 12G)
-    model_name_list = ['resnet18', 'resnet34', 'inception_v3']
+    model_name_list = ['resnet18', 'resnet34', 'inception_v3', 'swint']
+    model_input_size = [224, 224, 229, 224]
     print(model_name_list)
     model_list = []
     for model_name in model_name_list:
@@ -117,12 +118,13 @@ if __name__ == '__main__':
 
     # The Ensemble_logits Module use input diversity with 0.7 probability and nearest mode (interpolate) for each model
     ensemble_model = Ensemble_logits(
-        model_list=model_list, Num_classes=20, prob=0.7, mode="nearest").cuda()
+        model_list=model_list, input_size=model_input_size, prob=0.7, mode="nearest").cuda()
     ensemble_model.eval()
 
     # eval model
     print("Model to predict adv examples's confidence")
-    model_name_list = ['resnet18', 'resnet34', 'inception_v3']
+    model_name_list = ['mobilenet_v2', 'googlenet']
+    model_input_size = [224]
     print(model_name_list)
     model_list = []
     for model_name in model_name_list:
@@ -134,7 +136,7 @@ if __name__ == '__main__':
         model_list.append(temp_model)
 
     eval_model = Ensemble_logits(
-        model_list=model_list, Num_classes=20, prob=0.7, mode="nearest").cuda()
+        model_list=model_list, input_size=model_input_size, prob=0.7, mode="nearest").cuda()
     eval_model.eval()
 
     for inputs, (targets, path) in tqdm(data_loader):

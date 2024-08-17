@@ -271,7 +271,7 @@ def get_parser():
     parser = argparse.ArgumentParser(description='Classfication Model Training')
     parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
     parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
-    parser.add_argument('--arch', default="resnet18", choices=['resnet18', 'resnet34', 'resnet50', 'vit', 'inception_v3'],help='the network architecture')
+    parser.add_argument('--arch', default="resnet18", choices=['resnet18', 'resnet34', 'resnet50', 'vit', 'inception_v3', 'vgg16', 'mobilenet_v2', 'mobilenet_v3', 'swint', 'googlenet'],help='the network architecture')
     parser.add_argument('--gpu', default="0", type=str, help='which gpus are available')
     parser.add_argument('--batch_size', default=128, type=int, help='batch size')
     parser.add_argument('--train_set', default='/data/hdd3/duhao/data/datasets/attack_dataset/phase1/train_set', type=str, help='train set path')
@@ -287,7 +287,7 @@ def get_loader(args):
     train_data_path = args.train_set
     test_data_path = args.test_set
 
-    if args.arch in ["resnet18", "vit", "resnet34", "resnet50"]:
+    if args.arch in ["resnet18", "vit", "resnet34", "resnet50", "vgg16", "mobilenet_v2", "mobilenet_v3", "swint", "googlenet"]:
         transform_train = transforms.Compose([
             transforms.Resize((224, 224)), 
             transforms.RandomCrop(224, padding=4),
@@ -359,6 +359,23 @@ def get_architecture(arch, device):
         model.heads = nn.Linear(model.heads.head.in_features, 20) 
     elif arch == "inception_v3":
         model = inception_v3()
+        model.fc = nn.Linear(model.fc.in_features, 20)
+    elif arch == "vgg16":
+        model = vgg16()
+        model.classifier[6] = nn.Linear(in_features=4096, out_features=20)
+    elif arch == "mobilenet_v2":
+        model = mobilenet_v2()
+        # 修改最后的全连接层，20类分类任务
+        model.classifier[1] = nn.Linear(model.last_channel, 20)
+    elif arch == "mobilenet_v3":
+        model = mobilenet_v3_small(num_classes=20)
+    elif arch == "swint":
+        model = swin_t(weights='IMAGENET1K_V1')
+        # 修改分类头，20个类别
+        model.head = nn.Linear(model.head.in_features, 20)
+    elif arch == "googlenet":
+        # 加载预训练的 GoogLeNet 模型
+        model = googlenet()
         model.fc = nn.Linear(model.fc.in_features, 20)
     else:
         raise ValueError(f"Unsupported architecture: {arch}")
