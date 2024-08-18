@@ -1,0 +1,5 @@
+export HF_ENDPOINT=https://hf-mirror.com
+# python train.py --gpu "1,2,3" --arch "swint" --batch_size 512 --lr 0.001 --epoch 10
+# python train.py --gpu "1,2,3" --arch "efficientnet_b0.ra4_e3600_r224_in1k" --batch_size 1024 --lr 0.001 --epoch 20 --train_set "/home/heshiyuan/code/adversarial_competition/data/phase1/train_set" --test_set "/home/heshiyuan/code/adversarial_competition/data/phase1/test_set"
+# python train.py --gpu "0,1,2" --arch "densenet201.tv_in1k" --batch_size 512 --lr 0.001 --epoch 20 --train_set "/home/heshiyuan/code/adversarial_competition/data/phase1/train_set" --test_set "/home/heshiyuan/code/adversarial_competition/data/phase1/test_set"
+python train.py --gpu "0,1,2,3" --arch "resnet101.a1h_in1k" --batch_size 1024 --lr 0.01 --epoch 65 --train_set "/home/heshiyuan/code/adversarial_competition/data/phase1/train_set" --test_set "/home/heshiyuan/code/adversarial_competition/data/phase1/test_set" --resume
