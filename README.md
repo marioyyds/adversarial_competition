@@ -26,37 +26,50 @@
 
 ![Alt text](imgs/commit.png)
 
-## 4. 安排
+## 4. How to use
 
-**preliminary work:**
+### 4.1 划分数据集
 
-* [https://zhuanlan.zhihu.com/p/621188598](https://zhuanlan.zhihu.com/p/621188598)
-* [https://github.com/jhayes14/adversarial-patch](https://github.com/jhayes14/adversarial-patch)
-* [https://arxiv.org/pdf/1712.09665](https://arxiv.org/pdf/1712.09665)
-* [https://github.com/marioyyds/EMA?tab=readme-ov-file](https://github.com/marioyyds/EMA?tab=readme-ov-file)
-* [https://paperswithcode.com/paper/adversarial-patch](https://paperswithcode.com/paper/adversarial-patch)
+在训练模型之前，使用`utils/split_dataset.py`按照8：2划分数据集。
 
-**初赛：**
+```python
+# split_dataset.py
+import os
+import shutil
+import random
 
-* 合适的base或者弄一个基础工程
-  * [https://github.com/huggingface/pytorch-image-models](https://github.com/huggingface/pytorch-image-models)
-  * [https://github.com/open-mmlab/mmpretrain](https://github.com/open-mmlab/mmpretrain)
-  * [https://github.com/pytorch/vision](https://github.com/pytorch/vision)
-  * [https://github.com/jhayes14/adversarial-patch/tree/master](https://github.com/jhayes14/adversarial-patch/tree/master)
-* 训练分类模型
-* 攻击方法（patch、noise等）选择
+# 设置路径
+data_dir = '/data/hdd3/duhao/data/datasets/attack_dataset/train'  # 你的数据集主文件夹
+train_dir = '/data/hdd3/duhao/data/datasets/attack_dataset/phase1/train_set'  # 用于保存训练集的文件夹
+test_dir = '/data/hdd3/duhao/data/datasets/attack_dataset/phase1/test_set'    # 用于保存测试集的文件夹
+```
 
-**思路：**
+更改代码相应的路径，然后执行文件。
 
-* 训练分类模型（CNN、VIT都得试一下）
-* 在分类模型基础上，选择攻击算法（PGD、Patch）
+### 4.2 模型训练
 
-QA：
+模型训练，本项目基于hugging face提供的[timm](http://huggingface.co/timm)模块。
 
-* 攻击的模型是否本身就具有对抗性？
-* 这儿的攻击是黑盒攻击，是否可参考之前workshop，使用ensemble？
+![Alt text](imgs/timm.png)
+其提供了1351个模型供我们微调。
 
-**TODO:**
+```shell
+# scripts/train.sh
+export HF_ENDPOINT=https://hf-mirror.com
+python train.py --gpu "0,1,2,3" --arch "resnet101.a1h_in1k" --batch_size 1024 --lr 0.01 --epoch 65 --train_set "/home/heshiyuan/code/adversarial_competition/data/phase1/train_set" --test_set "/home/heshiyuan/code/adversarial_competition/data/phase1/test_set"
+```
 
-* 相关对抗比赛，以别人的方案作为base
-* 查找相关论文
+选择合适的模型，然后运行`bash scripts/train.sh`进行模型训练
+
+### 4.3 生成对抗样本
+
+执行`bash ensmeble_attack.sh`生成对抗样本。
+
+## 5. Q&A
+
+1. 在哪里查看实验记录？  
+答：`Discussions`->`实验结果记录`或[https://github.com/marioyyds/adversarial_competition/discussions/13](https://github.com/marioyyds/adversarial_competition/discussions/13)
+2. 在哪里看知识分享？  
+答：`Discussions`->`知识分享`或[https://github.com/marioyyds/adversarial_competition/discussions/15](https://github.com/marioyyds/adversarial_competition/discussions/15)
+3. 在哪里看项目安排？  
+答：`Projects`->`对抗攻击挑战赛`或[https://github.com/users/marioyyds/projects/2](https://github.com/users/marioyyds/projects/2)
