@@ -11,6 +11,17 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "python": "/data/hdd3/duhao/miniconda3/envs/rift/bin/python"
-        }
+        },
+        {
+            "name": "(37777-dh) Python Debugger: mobilenetv3",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "python": "/data/hdd3/duhao/miniconda3/envs/rift/bin/python",
+            "args": [
+                "--arch", "mobilenet_v3"
+            ]
+        },
     ]
 }

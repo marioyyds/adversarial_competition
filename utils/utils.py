@@ -20,7 +20,17 @@ from os import path
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.ndimage.interpolation import rotate
+import os
+import sys
 
+from torch.utils.data import DataLoader, random_split
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.backends.cudnn as cudnn
+import argparse
+from torchvision.models import *
+from .custom_dataset import CustomDataset
+from timm import create_model
 
 def get_mean_and_std(dataset):
     '''Compute the mean and std value of dataset.'''
@@ -256,3 +266,129 @@ def square_transform(patch, data_shape, patch_shape, image_size):
     mask[mask != 0] = 1.0
     
     return x, mask
+
+
+def get_parser():
+    parser = argparse.ArgumentParser(description='Classfication Model Training')
+    parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
+    parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
+    parser.add_argument('--arch', default="resnet18", type=str,help='the network architecture')
+    parser.add_argument('--gpu', default="0", type=str, help='which gpus are available')
+    parser.add_argument('--epoch', default=200, type=int, help='how many epoch to train')
+    parser.add_argument('--batch_size', default=128, type=int, help='batch size')
+    parser.add_argument('--num_worker', default=8, type=int, help='number of workers')
+    parser.add_argument('--train_set', default='/data/hdd3/duhao/data/datasets/attack_dataset/phase1/train_set', type=str, help='train set path')
+    parser.add_argument('--test_set', default='/data/hdd3/duhao/data/datasets/attack_dataset/phase1/test_set', type=str, help='test set path')
+    args = parser.parse_args()
+    return args
+
+def get_loader(args):
+    # Data
+    print('==> Preparing data..')
+
+    # 设置图像的路径
+    train_data_path = args.train_set
+    test_data_path = args.test_set
+
+    if args.arch == "inception_v3":
+        transform_train = transforms.Compose([
+            transforms.Resize((299, 299)), 
+            transforms.RandomCrop(299, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+
+        transform_test = transforms.Compose([
+            transforms.Resize((224, 224)), 
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+
+        # 使用ImageFolder加载数据
+        # train_dataset = datasets.ImageFolder(root=train_data_path, transform=transform_train)
+        # test_dataset = datasets.ImageFolder(root=test_data_path, transform=transform_test)
+
+        # 使用自定义的Dataset，这会将数据集提前加载到内存以提高速度
+        train_dataset = CustomDataset(root=train_data_path, transform=transform_train)
+        test_dataset = CustomDataset(root=test_data_path, transform=transform_test)
+    else:
+        transform_train = transforms.Compose([
+            transforms.Resize((224, 224)), 
+            transforms.RandomCrop(224, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+
+        transform_test = transforms.Compose([
+            transforms.Resize((224, 224)), 
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+
+        # 使用ImageFolder加载数据
+        # train_dataset = datasets.ImageFolder(root=train_data_path, transform=transform_train)
+        # test_dataset = datasets.ImageFolder(root=test_data_path, transform=transform_test)
+
+        # 使用自定义的Dataset，这会将数据集提前加载到内存以提高速度
+        train_dataset = CustomDataset(root=train_data_path, transform=transform_train)
+        test_dataset = CustomDataset(root=test_data_path, transform=transform_test)
+
+        # 打印一些信息
+    print(f"训练集大小: {len(train_dataset)}")
+    print(f"测试集大小: {len(test_dataset)}")
+
+    # 创建DataLoader用于加载数据
+    trainloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_worker)
+    testloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_worker)
+
+    return trainloader, testloader
+
+def get_architecture(arch, device):
+    if arch == "resnet18":
+        model = resnet18()
+        model.fc = nn.Linear(model.fc.in_features, 20)
+    elif arch == "resnet34":
+        model = resnet34()
+        model.fc = nn.Linear(model.fc.in_features, 20)
+    elif arch == "resnet50":
+        model = resnet50()
+        model.fc = nn.Linear(model.fc.in_features, 20)
+    elif arch == "vit":
+        model = vit_b_16()
+        model.heads = nn.Linear(model.heads.head.in_features, 20) 
+    elif arch == "inception_v3":
+        model = inception_v3()
+        model.fc = nn.Linear(model.fc.in_features, 20)
+    elif arch == "vgg16":
+        model = vgg16()
+        model.classifier[6] = nn.Linear(in_features=4096, out_features=20)
+    elif arch == "mobilenet_v2":
+        model = mobilenet_v2()
+        # 修改最后的全连接层，20类分类任务
+        model.classifier[1] = nn.Linear(model.last_channel, 20)
+    elif arch == "mobilenet_v3":
+        model = mobilenet_v3_small(num_classes=20)
+    elif arch == "swint":
+        model = swin_t(weights='IMAGENET1K_V1')
+        # 修改分类头，20个类别
+        model.head = nn.Linear(model.head.in_features, 20)
+    elif arch == "googlenet":
+        # 加载预训练的 GoogLeNet 模型
+        model = googlenet()
+        model.fc = nn.Linear(model.fc.in_features, 20)
+    else:
+        model = create_model(arch, pretrained=True, num_classes=20)
+
+    if device == 'cuda':
+        model = torch.nn.DataParallel(model)
+        cudnn.benchmark = True
+    return model
+
+def get_model(args, device):
+
+    print('==> Building model..')
+    model = get_architecture(args.arch, device)
+    
+    return model

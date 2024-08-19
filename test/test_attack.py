@@ -1,18 +1,24 @@
 import os
+import sys
+# 获取当前文件的路径
+current_path = os.path.dirname(os.path.abspath(__file__))
+
+# 将当前文件路径加入到 sys.path
+sys.path.append(current_path)
+sys.path.append(current_path + "/..")
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from torchvision import datasets, transforms
-from torchvision.utils import save_image
-from PIL import Image
-import numpy as np
+from torch.utils.data import DataLoader
+import torch.nn as nn
 from torchvision.models import *
-from tqdm import tqdm
-import torch.backends.cudnn as cudnn
+from utils import get_model, get_parser
 from typing import Any, Callable, cast, Dict, List, Optional, Tuple, Union
 from torchvision.datasets.folder import default_loader
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from torch.utils.data import DataLoader, random_split
+import torchattacks
+from tqdm import tqdm
+from torchvision.utils import save_image
 
 class CustomDataset(datasets.ImageFolder):
     def __init__(self, root: str, transform: Union[Callable[..., Any], None] = None,
@@ -53,42 +59,37 @@ class Normalize(nn.Module):
         std = self.std.reshape(1, 3, 1, 1)
         return (input - mean) / std
 
+def get_loader(args):
+    # Data
+    print('==> Preparing data..')
 
-def pgd_attack(model, images, labels, device, eps=32. / 255., alpha=2. / 255., iters=10, advFlag=None, forceEval=True, randomInit=True):
-    loss = nn.CrossEntropyLoss()
+    # 设置图像的路径
+    test_data_path = args.test_set
 
-    if randomInit:
-        delta = torch.rand_like(images) * eps * 2 - eps
-    else:
-        delta = torch.zeros_like(images)
-    delta = torch.nn.Parameter(delta, requires_grad=True)
+    transform_test = transforms.Compose([
+        transforms.Resize((224, 224)), 
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    ])
 
-    for i in range(iters):
-        if advFlag is None:
-            if forceEval:
-                model.eval()
-            outputs = model(images + delta)
-        else:
-            if forceEval:
-                model.eval()
-            outputs = model(images + delta, advFlag)
+    # 使用ImageFolder加载数据
+    # train_dataset = datasets.ImageFolder(root=train_data_path, transform=transform_train)
+    # test_dataset = datasets.ImageFolder(root=test_data_path, transform=transform_test)
 
-        model.zero_grad()
-        cost = loss(outputs, labels)
-        # cost.backward()
-        delta_grad = torch.autograd.grad(cost, [delta])[0]
+    # 使用自定义的Dataset，这会将数据集提前加载到内存以提高速度
+    test_dataset = CustomDataset(root=test_data_path, transform=transform_test)
+   
+    print(f"测试集大小: {len(test_dataset)}")
 
-        delta.data = delta.data + alpha * delta_grad.sign()
-        delta.grad = None
-        delta.data = torch.clamp(delta.data, min=-eps, max=eps)
-        delta.data = torch.clamp(images + delta.data, min=0, max=1) - images
+    # 创建DataLoader用于加载数据
+    testloader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=8)
 
-    model.zero_grad()
+    return testloader
 
-    return (images + delta).detach()
-
-# 递归处理文件夹及其子文件夹
 def process_images(model, device):
+    # atk = torchattacks.PGD(model, eps=8/255, alpha=2/255, steps=20)
+    atk = torchattacks.MIFGSM(model, eps=8/255, steps=10, decay=1.0)
+
     transform_test = transforms.Compose([
         transforms.Resize((224, 224)), 
         transforms.ToTensor(),
@@ -108,7 +109,7 @@ def process_images(model, device):
     for data, (label, path) in tqdm(testloader):
         data = data.to(device)
         label = label.to(device)
-        adv_img = pgd_attack(model, data, label, device=device)
+        adv_img = atk(data, label)
         output_img_path = path[0].replace("clean_cls_samples", "adv_samples")
         
         output_dir_path = os.path.dirname(output_img_path)
@@ -116,22 +117,21 @@ def process_images(model, device):
             os.makedirs(output_dir_path)
         save_image(adv_img, output_img_path)
 
-# 示例使用
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+if __name__ == "__main__":
+    args = get_parser()
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    
+    net = get_model(args, device)
+    net = net.to(device)
 
-print("=> creating model ")
-netClassifier = resnet18()
-netClassifier.fc = nn.Linear(netClassifier.fc.in_features, 20)
+    # Load checkpoint.
+    print('==> Resuming from checkpoint..')
+    assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
+    checkpoint = torch.load(f'./checkpoint/{args.arch}.pth')
+    net.load_state_dict(checkpoint['net'])
+    net.eval()
 
-if device == 'cuda':
-    netClassifier = torch.nn.DataParallel(netClassifier)
-    cudnn.benchmark = True
+    net = nn.Sequential(Normalize(mean=[0.4914, 0.4822, 0.4465], std=[0.2471, 0.2435, 0.2616]), net)
 
-checkpoint = torch.load('./checkpoint/resnet18.pth')
-
-netClassifier.load_state_dict(checkpoint["net"])
-netClassifier.to(device)
-
-netClassifier = nn.Sequential(Normalize(mean=[0.4914, 0.4822, 0.4465], std=[0.2471, 0.2435, 0.2616]), netClassifier)
-
-process_images(netClassifier, device)
+    process_images(net, device)
