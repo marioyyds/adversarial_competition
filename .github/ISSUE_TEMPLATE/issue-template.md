@@ -1,5 +1,5 @@
 ---
-name: issue name
+name: issue template
 about: decsription
 title: ''
 labels: ''
