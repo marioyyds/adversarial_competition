@@ -98,8 +98,8 @@ def normalize_by_pnorm(x, p=2, small_constant=1e-6):
     return x / norm
 
 if __name__ == '__main__':
-    dataset = CustomDataset("/home/heshiyuan/code/adversarial_competition/data/clean_cls_samples", transform=transforms.ToTensor())
-    data_loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
+    dataset = CustomDataset("/data/hdd3/duhao/data/datasets/attack_dataset/clean_cls_samples", transform=transforms.ToTensor())
+    data_loader = torch.utils.data.DataLoader(dataset, batch_size=64, shuffle=False, num_workers=4)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     print("Model to generate adv examples")
@@ -145,17 +145,19 @@ if __name__ == '__main__':
 
         g = torch.zeros_like(inputs).cuda() # for momentum update
         delta = torch.zeros_like(inputs).cuda() # init perturbation
+        output_delta = torch.zeros_like(delta)
         mask = torch.ones((batch_size, )).bool()
         
-        # eps_list = [4.0 / 255, 6.0 / 255, 8.0 / 255, 12.0 / 255, 16.0 / 255, 32.0 / 255, 64.0 / 255] 
-        eps_list = [64.0 / 255] 
+        eps_list = [4.0 / 255, 6.0 / 255, 8.0 / 255, 12.0 / 255, 16.0 / 255, 32.0 / 255, 64.0 / 255] 
+        # eps_list = [8.0 / 255, 12.0 / 255, 16.0 / 255, 32.0 / 255, 64.0 / 255] 
+        # eps_list = [64.0 / 255] 
         for eps in eps_list:
             if eps <= 8.0 / 255:
                 num_steps = 10
             elif eps <= 16.0 / 255:
                 num_steps = 20
             else:
-                num_steps = 20
+                num_steps = 50
             step_size = (eps * 1.25) / num_steps
             delta = Variable(delta.data, requires_grad=True)
             for _ in range(num_steps):
@@ -186,11 +188,15 @@ if __name__ == '__main__':
             # if the transfer confidence is still bigger than 1%, it may need bigger eps
             mask = (conf >= 0.01)
 
+            indices = torch.where(conf <= 0.01)[0]
+            output_delta[indices] = torch.clone(delta[indices])
+
             if mask.sum() == 0:
                 break
-
+        non_zero_indices = [i for i in range(output_delta.size(0)) if not torch.all(output_delta[i] == 0)]
+        output_delta[non_zero_indices] = torch.clone(delta[non_zero_indices])
         # print("Attack max eps level: {} finished, conf: {}".format(eps, conf))
-        X_pgd = Variable(inputs + delta, requires_grad=False)
+        X_pgd = Variable(inputs + output_delta, requires_grad=False)
         X_pgd = Variable(torch.clamp(X_pgd, 0, 1), requires_grad=False)
         with torch.no_grad():
             ensem_logits = ensemble_model(X_pgd, diversity=False)
@@ -200,10 +206,10 @@ if __name__ == '__main__':
 
         output_data = X_pgd.clone()
 
-        output_img_path = path[0].replace("clean_cls_samples", "adv_samples")
-        
-        output_dir_path = os.path.dirname(output_img_path)
-        if not os.path.exists(output_dir_path):
-            os.makedirs(output_dir_path)
-        save_image(output_data, output_img_path)
+        for img, save_path in zip(output_data, path):
+            save_path = save_path.replace("clean_cls_samples", "adv_samples")
+            output_dir_path = os.path.dirname(save_path)
+            if not os.path.exists(output_dir_path):
+                os.makedirs(output_dir_path)
+            save_image(img, save_path)
     
