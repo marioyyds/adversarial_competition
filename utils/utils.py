@@ -346,6 +346,7 @@ def get_loader(args):
     return trainloader, testloader
 
 def get_architecture(arch, device):
+    arch = arch.split("-")[0]
     if arch == "resnet18":
         model = resnet18()
         model.fc = nn.Linear(model.fc.in_features, 20)
