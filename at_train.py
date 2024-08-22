@@ -183,8 +183,6 @@ if __name__ == "__main__":
         elif os.path.isfile(f'./checkpoint/{args.arch.split("-")[0]}.pth'):
             checkpoint = torch.load(f'./checkpoint/{args.arch.split("-")[0]}.pth')
             net.load_state_dict(checkpoint['net'])
-            best_acc = checkpoint['acc']
-            start_epoch = checkpoint['epoch']
         else:
             raise ValueError("权重不存在！")
 
