@@ -104,8 +104,8 @@ if __name__ == '__main__':
 
     print("Model to generate adv examples")
     # delete one model if OOM (all 8 models need around 12G)
-    model_name_list = ['resnet50.a1_in1k', 'inception_v3', 'efficientnet_b0.ra4_e3600_r224_in1k', 'resnet18']
-    model_input_size = [224, 229, 224, 224]
+    model_name_list = ['resnet50.a1_in1k', 'inception_v3', 'efficientnet_b0.ra4_e3600_r224_in1k', 'resnet18', 'resnet18-at']
+    model_input_size = [224, 229, 224, 224, 224]
     print(model_name_list)
     model_list = []
     for model_name in model_name_list:
@@ -149,7 +149,8 @@ if __name__ == '__main__':
         mask = torch.ones((batch_size, )).bool()
         
         # eps_list = [4.0 / 255, 6.0 / 255, 8.0 / 255, 12.0 / 255, 16.0 / 255, 32.0 / 255, 64.0 / 255] 
-        eps_list = [8.0 / 255, 12.0 / 255, 16.0 / 255, 32.0 / 255, 64.0 / 255] 
+        # eps_list = [8.0 / 255, 12.0 / 255, 16.0 / 255, 32.0 / 255, 64.0 / 255] 
+        eps_list = [32.0 / 255] 
         # eps_list = [64.0 / 255] 
         for eps in eps_list:
             if eps <= 8.0 / 255:
