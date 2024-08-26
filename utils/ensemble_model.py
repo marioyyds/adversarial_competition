@@ -18,6 +18,7 @@ class Ensemble_logits(nn.Module):
         return F.interpolate(input, size=target_size, mode=self.mode)
 
     def input_diversity(self, input_tensor, input_size, target_scale=0.1):
+        # random crop and pad
         target_size = int(input_size * (target_scale + 1.0))
         small_size = int(input_size * (1.0 -target_scale))
         rnd = np.floor(np.random.uniform(small_size, target_size, size=())).astype(np.int32).item()
