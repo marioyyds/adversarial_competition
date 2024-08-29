@@ -106,16 +106,19 @@ if __name__ == '__main__':
     print("Model to generate adv examples")
     # delete one model if OOM (all 8 models need around 12G),now need 5.5G    
     # model_name_list = ['resnet50.a1_in1k', 'inception_v3', 'efficientnet_b0.ra4_e3600_r224_in1k', 'resnet18', 'resnet18-at']
-    model_name_list = ['resnet50.a1_in1k', 'inception_v3', 'efficientnet_b0.ra4_e3600_r224_in1k', 'vit', 'resnet18-at']
-    model_input_size = [224, 229, 224, 224,224]
+    model_name_list = ['resnet50.a1_in1k', 'resnet50.a1_in1k-at', 'inception_v3', 'efficientnet_b0.ra4_e3600_r224_in1k',  'resnet18', 'resnet18-at']
+    model_input_size = [224, 224, 229, 224, 224, 224]
     print(model_name_list)
     model_list = []
     for model_name in model_name_list:
         temp_model = get_architecture(model_name, device).cuda()
-        if "at" in model_name:
+        if os.path.exists(f'./checkpoint/{model_name}.pth'):
+            temp_checkpoint = torch.load(f'./checkpoint/{model_name}.pth')
+        elif os.path.exists(f'./checkpoint/at_train/{model_name}.pth'):
             temp_checkpoint = torch.load(f'./checkpoint/at_train/{model_name}.pth')
         else:
-            temp_checkpoint = torch.load(f'./checkpoint/{model_name}.pth')
+            raise ValueError("权重不存在！")
+        
         temp_model.load_state_dict(temp_checkpoint['net'])
         temp_model = nn.Sequential(Normalize(mean=[0.4914, 0.4822, 0.4465], std=[0.2471, 0.2435, 0.2616]), temp_model)
         temp_model.eval()
@@ -154,8 +157,8 @@ if __name__ == '__main__':
         mask = torch.ones((batch_size, )).bool()
         
         # eps_list = [4.0 / 255, 6.0 / 255, 8.0 / 255, 12.0 / 255, 16.0 / 255, 32.0 / 255, 64.0 / 255] 
-        # eps_list = [8.0 / 255, 12.0 / 255, 16.0 / 255, 32.0 / 255, 64.0 / 255]
-        eps_list = [32.0 / 255]
+        eps_list = [32.0 / 255, 48.0 / 255]
+        # eps_list = [32.0 / 255]
         # eps_list = [64.0 / 255] 
         for eps in eps_list:
             if eps <= 8.0 / 255:
@@ -170,11 +173,12 @@ if __name__ == '__main__':
                 delta.requires_grad_()
                 adv = inputs + delta
                 adv = torch.clamp(adv, 0, 1)
+                adv = F.conv2d(adv, weight=get_kernel(5),stride=(1, 1), groups=3, padding=(5 - 1) // 2) # use gaussian filter on adv samples
                 with torch.enable_grad():
                     ensem_logits = ensemble_model(adv, diversity=True)
                     loss = F.cross_entropy(ensem_logits, targets, reduction="none")
                 PGD_grad = torch.autograd.grad(loss.sum(), [delta])[0].detach()
-                # gaussian filter with 5x5 kernel
+                # gaussian filter with 5x5 kernel on gradient 
                 PGD_grad = F.conv2d(PGD_grad, weight=get_kernel(5),stride=(1, 1), groups=3, padding=(5 - 1) // 2)
                 PGD_noise = normalize_by_pnorm(PGD_grad, p=1)
                 g[mask] = g[mask] * 0.8 + PGD_noise[mask]
