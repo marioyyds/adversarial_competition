@@ -13,24 +13,21 @@ import torch.nn as nn
 import torch.nn.init as init
 
 import torch.nn.functional as F
+import torchvision
 from torchvision import datasets, transforms
 from torch.utils.data.sampler import SubsetRandomSampler
 import numpy as np
-from os import path
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.ndimage.interpolation import rotate
-import os
-import sys
 
 from torch.utils.data import DataLoader, random_split
-import torch.nn as nn
-import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 import argparse
 from torchvision.models import *
 from .custom_dataset import CustomDataset
 from timm import create_model
+import csv
 
 def get_mean_and_std(dataset):
     '''Compute the mean and std value of dataset.'''
@@ -393,3 +390,124 @@ def get_model(args, device):
     model = get_architecture(args.arch, device)
     
     return model
+
+# Initialize the patch
+# TODO: Add circle type
+def patch_initialization(patch_type='rectangle', image_size=(3, 224, 224), noise_percentage=0.03):
+    if patch_type == 'rectangle':
+        mask_length = int((noise_percentage * image_size[1] * image_size[2])**0.5)
+        patch = np.random.rand(image_size[0], mask_length, mask_length)
+    return patch
+
+# Generate the mask and apply the patch
+# TODO: Add circle type
+def mask_generation(mask_type='rectangle', patch=None, image_size=(3, 224, 224)):
+    applied_patch = np.zeros(image_size)
+    if mask_type == 'rectangle':
+        # patch rotation
+        rotation_angle = np.random.choice(4)
+        for i in range(patch.shape[0]):
+            patch[i] = np.rot90(patch[i], rotation_angle)  # The actual rotation angle is rotation_angle * 90
+        # patch location
+        x_location, y_location = np.random.randint(low=0, high=image_size[1]-patch.shape[1]), np.random.randint(low=0, high=image_size[2]-patch.shape[2])
+        for i in range(patch.shape[0]):
+            applied_patch[:, x_location:x_location + patch.shape[1], y_location:y_location + patch.shape[2]] = patch
+    mask = applied_patch.copy()
+    mask[mask != 0] = 1.0
+    return applied_patch, mask, x_location, y_location
+
+# Test the patch on dataset
+def test_patch(patch_type, target, patch, test_loader, model):
+    model.eval()
+    test_total, test_actual_total, test_success = 0, 0, 0
+    for (image, label) in test_loader:
+        test_total += label.shape[0]
+        assert image.shape[0] == 1, 'Only one picture should be loaded each time.'
+        image = image.cuda()
+        label = label.cuda()
+        output = model(image)
+        _, predicted = torch.max(output.data, 1)
+        if predicted[0].data.cpu().numpy() != target:
+            test_actual_total += 1
+            applied_patch, mask, x_location, y_location = mask_generation(patch_type, patch, image_size=(3, 224, 224))
+            applied_patch = torch.from_numpy(applied_patch)
+            mask = torch.from_numpy(mask)
+            perturbated_image = torch.mul(mask.type(torch.FloatTensor), applied_patch.type(torch.FloatTensor)) + torch.mul((1 - mask.type(torch.FloatTensor)), image.type(torch.FloatTensor))
+            perturbated_image = perturbated_image.cuda()
+            output = model(perturbated_image)
+            _, predicted = torch.max(output.data, 1)
+            if predicted[0].data.cpu().numpy() == target:
+                test_success += 1
+    return test_success / test_actual_total
+
+# Load the datasets
+# We randomly sample some images from the dataset, because ImageNet itself is too large.
+def dataloader(train_size, test_size, data_dir, batch_size, num_workers, total_num=50000):
+    # Setup the transformation
+    train_transforms = transforms.Compose([
+        transforms.RandomResizedCrop(224),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+    ])
+
+    test_transforms = transforms.Compose([
+        transforms.Resize(size=(224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+    ])
+
+    index = np.arange(total_num)
+    np.random.shuffle(index)
+    train_index = index[:train_size]
+    test_index = index[train_size: (train_size + test_size)]
+
+    train_dataset = torchvision.datasets.ImageFolder(root=data_dir, transform=train_transforms)
+    test_dataset = torchvision.datasets.ImageFolder(root=data_dir, transform=test_transforms)
+
+    train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, sampler=SubsetRandomSampler(train_index), num_workers=num_workers, pin_memory=True, shuffle=False)
+    test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, sampler=SubsetRandomSampler(test_index), num_workers=num_workers, pin_memory=True, shuffle=False)
+    return train_loader, test_loader
+
+# Test the model on clean dataset
+def test(model, dataloader):
+    model.eval()
+    correct, total, loss = 0, 0, 0
+    with torch.no_grad():
+        for (images, labels) in dataloader:
+            images = images.cuda()
+            labels = labels.cuda()
+            outputs = model(images)
+            _, predicted = torch.max(outputs.data, 1)
+            total += labels.shape[0]
+            correct += (predicted == labels).sum().item()
+    return correct / total
+
+# Load the log and generate the training line
+def log_generation(log_dir):
+    # Load the statistics in the log
+    epochs, train_rate, test_rate = [], [], []
+    with open(log_dir, 'r') as f:
+        reader = csv.reader(f)
+        flag = 0
+        for i in reader:
+            if flag == 0:
+                flag += 1
+                continue
+            else:
+                epochs.append(int(i[0]))
+                train_rate.append(float(i[1]))
+                test_rate.append(float(i[2]))
+
+    # Generate the success line
+    plt.figure(num=0)
+    plt.plot(epochs, test_rate, label='test_success_rate', linewidth=2, color='r')
+    plt.plot(epochs, train_rate, label='train_success_rate', linewidth=2, color='b')
+    plt.xlabel("epoch")
+    plt.ylabel("success rate")
+    plt.xlim(-1, max(epochs) + 1)
+    plt.ylim(0, 1.0)
+    plt.title("patch attack success rate")
+    plt.legend()
+    plt.savefig("training_pictures/patch_attack_success_rate.png")
+    plt.close(0)

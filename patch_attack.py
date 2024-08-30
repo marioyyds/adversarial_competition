@@ -37,15 +37,27 @@ class CustomDataset(datasets.ImageFolder):
 
         return self.transform(default_loader(self.data[index][0])), self.data[index]
 
+class Normalize(nn.Module):
+    def __init__(self, mean, std) :
+        super(Normalize, self).__init__()
+        self.register_buffer('mean', torch.Tensor(mean).to("cuda"))
+        self.register_buffer('std', torch.Tensor(std).to("cuda"))
+        
+    def forward(self, input):
+        # Broadcasting
+        mean = self.mean.reshape(1, 3, 1, 1)
+        std = self.std.reshape(1, 3, 1, 1)
+        return (input - mean) / std
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--workers', type=int, default=8, help='number of data loading workers')
 parser.add_argument('--epochs', type=int, default=20, help='number of epochs to train for')
-parser.add_argument('--cuda', action='store_true', help='enables cuda')
-parser.add_argument('--target', type=int, default=20, help='The target class: 859 == toaster')
+parser.add_argument('--cuda', action='store_false', help='enables cuda')
+parser.add_argument('--target', type=int, default=0, help='The target class: 859 == toaster')
 parser.add_argument('--conf_target', type=float, default=0.9, help='Stop attack on image when target classifier reaches this value for target class')
 parser.add_argument('--max_count', type=int, default=50, help='max number of iterations to find adversarial example')
 parser.add_argument('--patch_type', type=str, default='circle', help='patch type: circle or square')
-parser.add_argument('--patch_size', type=float, default=0.05, help='patch size. E.g. 0.05 ~= 5% of image ')
+parser.add_argument('--patch_size', type=float, default=0.1, help='patch size. E.g. 0.05 ~= 5% of image ')
 parser.add_argument('--image_size', type=int, default=224, help='the height / width of the input image to network')
 parser.add_argument('--netClassifier', default='inceptionv3', help="The target classifier")
 parser.add_argument('--manualSeed', type=int, default=1338, help='manual seed')
@@ -79,21 +91,28 @@ image_size = opt.image_size
 train_set = opt.train_set
 test_set = opt.test_set
 
-
 print("=> creating model ")
-netClassifier = resnet18()
-netClassifier.fc = nn.Linear(netClassifier.fc.in_features, 21)
 
-checkpoint = torch.load('./checkpoint/resnet18_patch.pth')
-new_checkpoint = {}
-for key, val in  checkpoint['net'].items():
-    key = key.replace('module.', '')
-    new_checkpoint[key] = val
-netClassifier.load_state_dict(new_checkpoint)
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+model_name_list = ['resnet50.a1_in1k', 'inception_v3', 'efficientnet_b0.ra4_e3600_r224_in1k', 'resnet18']
+model_input_size = [224, 229, 224, 224]
+print(model_name_list)
+model_list = []
+for model_name in model_name_list:
+    temp_model = get_architecture(model_name, device).cuda()
+    temp_checkpoint = torch.load(f'./checkpoint/{model_name}.pth')
+    temp_model.load_state_dict(temp_checkpoint['net'])
+    temp_model = nn.Sequential(Normalize(mean=[0.4914, 0.4822, 0.4465], std=[0.2471, 0.2435, 0.2616]), temp_model)
+    temp_model.eval()
+    model_list.append(temp_model)
+
+# The Ensemble_logits Module use input diversity with 0.7 probability and nearest mode (interpolate) for each model
+netClassifier = Ensemble_logits(
+    model_list=model_list, input_size=model_input_size, prob=0.7, mode="nearest").cuda()
+netClassifier.eval()
 
 if opt.cuda:
     netClassifier.cuda()
-
 
 print('==> Preparing data..')
 
@@ -101,7 +120,6 @@ train_loader = torch.utils.data.DataLoader(
     CustomDataset(train_set, transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
     ])),
     batch_size=1, shuffle=False,
     num_workers=opt.workers)
@@ -110,22 +128,14 @@ test_loader = torch.utils.data.DataLoader(
     CustomDataset(test_set, transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
     ])),
     batch_size=1, shuffle=False,
     num_workers=opt.workers)
-
-min_in, max_in = 0, 1
-min_in, max_in = np.array([min_in, min_in, min_in]), np.array([max_in, max_in, max_in])
-mean, std = np.array([0.4914, 0.4822, 0.4465]), np.array([0.2023, 0.1994, 0.2010]) 
-
-min_out, max_out = np.min((min_in-mean)/std), np.max((max_in-mean)/std)
 
 def train(epoch, patch, patch_shape):
     netClassifier.eval()
     success = 0
     total = 0
-    recover_time = 0
     for batch_idx, (data, (path, labels)) in enumerate(train_loader):
         if opt.cuda:
             data = data.cuda()
@@ -151,12 +161,12 @@ def train(epoch, patch, patch_shape):
             patch, mask = patch.cuda(), mask.cuda()
         patch, mask = Variable(patch), Variable(mask)
  
-        adv_x, mask, patch = attack(data, patch, mask)
+        adv_x, mask, patch = attack(data, patch, mask, labels)
         
         adv_label = netClassifier(adv_x).data.max(1)[1][0]
         ori_label = labels.data[0]
         
-        if adv_label == target:
+        if adv_label != ori_label:
             success += 1
 
         if "clean_cls_samples" in path[0]:
@@ -190,9 +200,6 @@ def test(epoch, patch, patch_shape):
             data = data.cuda()
             labels = labels.cuda()
         data, labels = Variable(data), Variable(labels)
-
-        prediction = netClassifier(data)
-
         total += 1 
         
         # transform path
@@ -207,12 +214,12 @@ def test(epoch, patch, patch_shape):
         patch, mask = Variable(patch), Variable(mask)
  
         adv_x = torch.mul((1-mask),data) + torch.mul(mask,patch)
-        adv_x = torch.clamp(adv_x, min_out, max_out)
+        adv_x = torch.clamp(adv_x, 0, 1)
         
         adv_label = netClassifier(adv_x).data.max(1)[1][0]
         ori_label = labels.data[0]
         
-        if adv_label == target:
+        if adv_label != ori_label:
             success += 1
 
         save_path = path[0].replace("clean_cls_samples", "adv_samples")
@@ -234,41 +241,30 @@ def test(epoch, patch, patch_shape):
         # log to file  
         progress_bar(batch_idx, len(test_loader), "Test Success: {:.3f}".format(success/total))
 
-def attack(x, patch, mask):
+def attack(x, patch, mask, labels):
     netClassifier.eval()
 
     x_out = F.softmax(netClassifier(x))
-    target_prob = x_out.data[0][target]
 
-    adv_x = torch.mul((1-mask),x) + torch.mul(mask,patch)
+    # adv_x = torch.mul(1-mask,x) + torch.mul(mask,patch)
+    adv_x = x + torch.mul(mask,patch)
     
     count = 0 
-   
-    while conf_target > target_prob:
+    epsilon = torch.tensor(32./255, dtype=torch.float32).cuda()
+    step_size = torch.tensor(epsilon / 50, dtype=torch.float32).cuda()
+    for i in range(50):
         count += 1
         adv_x = Variable(adv_x.data, requires_grad=True)
-        adv_out = F.log_softmax(netClassifier(adv_x))
+        logits = netClassifier(adv_x)
+        
+        Loss = F.cross_entropy(logits, labels, reduction="none")
+        adv_x_grad = torch.autograd.grad(Loss.sum(), [adv_x])[0].detach() 
        
-        adv_out_probs, adv_out_labels = adv_out.max(1)
-        
-        Loss = -adv_out[0][target]
-        Loss.backward()
-     
-        adv_grad = adv_x.grad.clone()
-        
-        adv_x.grad.data.zero_()
-       
-        patch -= adv_grad 
-        
-        adv_x = torch.mul((1-mask),x) + torch.mul(mask,patch)
-        adv_x = torch.clamp(adv_x, min_out, max_out)
- 
-        out = F.softmax(netClassifier(adv_x))
-        target_prob = out.data[0][target]
-
-        if count >= opt.max_count:
-            break
-
+        patch = adv_x + (1.25 * step_size * torch.sign(adv_x_grad))
+        patch = torch.clamp(patch - x, -epsilon, epsilon)
+        adv_x = x + torch.mul(mask,patch)
+        adv_x = torch.clamp(adv_x, 0, 1)
+    patch = adv_x - x
     return adv_x, mask, patch 
 
 
