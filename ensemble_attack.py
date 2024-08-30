@@ -25,24 +25,25 @@ class CustomDataset(datasets.ImageFolder):
                  is_valid_file: Union[Callable[[str], bool], None] = None, 
                  num_threads: int = 32):
         super().__init__(root, transform, target_transform, loader, is_valid_file)
-        self.data = []
-        self.num_threads = num_threads
-        self._load_data()
+        self.data = self.imgs
+    #     self.data = []
+    #     self.num_threads = num_threads
+    #     self._load_data()
     
-    def _load_data(self):
-        with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
-            futures = {executor.submit(self.loader, sample_path): (target, sample_path) for sample_path, target in self.samples}
-            for future in as_completed(futures):
-                img = future.result()
-                target = futures[future]
-                self.data.append((img, target))
+    # def _load_data(self):
+    #     with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
+    #         futures = {executor.submit(self.loader, sample_path): (target, sample_path) for sample_path, target in self.samples}
+    #         for future in as_completed(futures):
+    #             img = future.result()
+    #             target = futures[future]
+    #             self.data.append((img, target))
     
     def __len__(self) -> int:
         return super().__len__()
     
     def __getitem__(self, index: int) -> Tuple[Any, int]:
 
-        return self.transform(self.data[index][0]), self.data[index][1]
+        return self.transform(default_loader(self.data[index][0])), self.data[index]
 
 class Normalize(nn.Module):
     def __init__(self, mean, std) :
@@ -139,7 +140,7 @@ if __name__ == '__main__':
         model_list=model_list, input_size=model_input_size, prob=0.7, mode="nearest").cuda()
     eval_model.eval()
 
-    for inputs, (targets, path) in tqdm(data_loader):
+    for inputs, (path, targets) in tqdm(data_loader):
         inputs, targets = inputs.cuda(), targets.cuda()
         batch_size = inputs.shape[0]
 
