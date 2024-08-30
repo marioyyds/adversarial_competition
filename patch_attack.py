@@ -17,40 +17,44 @@ from torch.autograd import Variable
 from torch.utils.data.sampler import SubsetRandomSampler
 from torchvision.models import *
 from torchvision import datasets, transforms
-
+from typing import Any, Callable, cast, Dict, List, Optional, Tuple, Union
+from torchvision.datasets.folder import default_loader
 from utils import *
 
+class CustomDataset(datasets.ImageFolder):
+    def __init__(self, root: str, transform: Union[Callable[..., Any], None] = None,
+                 target_transform: Union[Callable[..., Any], None] = None,
+                 loader: Callable[[str], Any] = default_loader,
+                 is_valid_file: Union[Callable[[str], bool], None] = None, 
+                 num_threads: int = 32):
+        super().__init__(root, transform, target_transform, loader, is_valid_file)
+        self.data = self.imgs
+
+    def __len__(self) -> int:
+        return super().__len__()
+    
+    def __getitem__(self, index: int) -> Tuple[Any, int]:
+
+        return self.transform(default_loader(self.data[index][0])), self.data[index]
+
 parser = argparse.ArgumentParser()
-parser.add_argument('--workers', type=int, help='number of data loading workers', default=2)
+parser.add_argument('--workers', type=int, default=8, help='number of data loading workers')
 parser.add_argument('--epochs', type=int, default=20, help='number of epochs to train for')
 parser.add_argument('--cuda', action='store_true', help='enables cuda')
-
-parser.add_argument('--target', type=int, default=0, help='The target class: 859 == toaster')
+parser.add_argument('--target', type=int, default=20, help='The target class: 859 == toaster')
 parser.add_argument('--conf_target', type=float, default=0.9, help='Stop attack on image when target classifier reaches this value for target class')
-
-parser.add_argument('--max_count', type=int, default=1000, help='max number of iterations to find adversarial example')
+parser.add_argument('--max_count', type=int, default=50, help='max number of iterations to find adversarial example')
 parser.add_argument('--patch_type', type=str, default='circle', help='patch type: circle or square')
 parser.add_argument('--patch_size', type=float, default=0.05, help='patch size. E.g. 0.05 ~= 5% of image ')
-
-parser.add_argument('--train_size', type=int, default=2000, help='Number of training images')
-parser.add_argument('--test_size', type=int, default=2000, help='Number of test images')
-
 parser.add_argument('--image_size', type=int, default=224, help='the height / width of the input image to network')
-
-parser.add_argument('--plot_all', type=int, default=1, help='1 == plot all successful adversarial images')
-
 parser.add_argument('--netClassifier', default='inceptionv3', help="The target classifier")
-
-parser.add_argument('--outf', default='./logs', help='folder to output images and model checkpoints')
 parser.add_argument('--manualSeed', type=int, default=1338, help='manual seed')
+# parser.add_argument('--train_set', default='/data/hdd3/duhao/data/datasets/attack_dataset/phase1/train_set', type=str, help='train set path')
+parser.add_argument('--train_set', default='/data/hdd3/duhao/data/datasets/attack_dataset/clean_cls_samples', type=str, help='train set path')
+parser.add_argument('--test_set', default='/data/hdd3/duhao/data/datasets/attack_dataset/clean_cls_samples', type=str, help='test set path')
 
 opt = parser.parse_args()
 print(opt)
-
-try:
-    os.makedirs(opt.outf)
-except OSError:
-    pass
 
 if opt.manualSeed is None:
     opt.manualSeed = random.randint(1, 10000)
@@ -72,17 +76,15 @@ max_count = opt.max_count
 patch_type = opt.patch_type
 patch_size = opt.patch_size
 image_size = opt.image_size
-train_size = opt.train_size
-test_size = opt.test_size
-plot_all = opt.plot_all 
+train_set = opt.train_set
+test_set = opt.test_set
 
-assert train_size + test_size <= 50000, "Traing set size + Test set size > Total dataset size"
 
 print("=> creating model ")
 netClassifier = resnet18()
-netClassifier.fc = nn.Linear(netClassifier.fc.in_features, 20)
+netClassifier.fc = nn.Linear(netClassifier.fc.in_features, 21)
 
-checkpoint = torch.load('./checkpoint/resnet18.pth')
+checkpoint = torch.load('./checkpoint/resnet18_patch.pth')
 new_checkpoint = {}
 for key, val in  checkpoint['net'].items():
     key = key.replace('module.', '')
@@ -94,34 +96,20 @@ if opt.cuda:
 
 
 print('==> Preparing data..')
-# normalize = transforms.Normalize(mean=netClassifier.mean,
-#                                  std=netClassifier.std)
-# idx = np.arange(50000)
-# np.random.shuffle(idx)
-# training_idx = idx[:train_size]
-# test_idx = idx[train_size:test_size]
 
 train_loader = torch.utils.data.DataLoader(
-    datasets.ImageFolder('/data/hdd3/duhao/data/datasets/attack_dataset/phase1/train_set', transforms.Compose([
+    CustomDataset(train_set, transforms.Compose([
         transforms.Resize((224, 224)),
-        # transforms.CenterCrop(max(netClassifier.input_size)),
         transforms.ToTensor(),
-        # ToSpaceBGR(netClassifier.input_space=='BGR'),
-        # ToRange255(max(netClassifier.input_range)==255),
-        # normalize,
         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
     ])),
     batch_size=1, shuffle=False,
     num_workers=opt.workers)
  
 test_loader = torch.utils.data.DataLoader(
-    datasets.ImageFolder('/data/hdd3/duhao/data/datasets/attack_dataset/phase1/test_set', transforms.Compose([
+    CustomDataset(test_set, transforms.Compose([
         transforms.Resize((224, 224)),
-        # transforms.CenterCrop(max(netClassifier.input_size)),
         transforms.ToTensor(),
-        # ToSpaceBGR(netClassifier.input_space=='BGR'),
-        # ToRange255(max(netClassifier.input_range)==255),
-        # normalize,
         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
     ])),
     batch_size=1, shuffle=False,
@@ -138,7 +126,7 @@ def train(epoch, patch, patch_shape):
     success = 0
     total = 0
     recover_time = 0
-    for batch_idx, (data, labels) in enumerate(train_loader):
+    for batch_idx, (data, (path, labels)) in enumerate(train_loader):
         if opt.cuda:
             data = data.cuda()
             labels = labels.cuda()
@@ -170,13 +158,14 @@ def train(epoch, patch, patch_shape):
         
         if adv_label == target:
             success += 1
-      
-            if plot_all == 1: 
-                # plot source image
-                vutils.save_image(data.data, "./%s/%d_%d_original.png" %(opt.outf, batch_idx, ori_label), normalize=True)
-                
-                # plot adversarial image
-                vutils.save_image(adv_x.data, "./%s/%d_%d_adversarial.png" %(opt.outf, batch_idx, adv_label), normalize=True)
+
+        if "clean_cls_samples" in path[0]:
+            save_path = path[0].replace("clean_cls_samples", "train_adv_samples")
+            output_dir_path = os.path.dirname(save_path)
+            if not os.path.exists(output_dir_path):
+                os.makedirs(output_dir_path)
+            # plot adversarial image
+            vutils.save_image(adv_x.data, save_path, normalize=True)
  
         masked_patch = torch.mul(mask, patch)
         patch = masked_patch.data.cpu().numpy()
@@ -196,7 +185,7 @@ def test(epoch, patch, patch_shape):
     netClassifier.eval()
     success = 0
     total = 0
-    for batch_idx, (data, labels) in enumerate(test_loader):
+    for batch_idx, (data, (path, labels)) in enumerate(test_loader):
         if opt.cuda:
             data = data.cuda()
             labels = labels.cuda()
@@ -204,11 +193,6 @@ def test(epoch, patch, patch_shape):
 
         prediction = netClassifier(data)
 
-        # only computer adversarial examples on examples that are originally classified correctly        
-        if prediction.data.max(1)[1][0] != labels.data[0]:
-            # vutils.save_image(adv_x.data, "./%s/%d_%d_adversarial.png" %(opt.outf, batch_idx, adv_label), normalize=True)
-            continue
-      
         total += 1 
         
         # transform path
@@ -230,6 +214,13 @@ def test(epoch, patch, patch_shape):
         
         if adv_label == target:
             success += 1
+
+        save_path = path[0].replace("clean_cls_samples", "adv_samples")
+        output_dir_path = os.path.dirname(save_path)
+        if not os.path.exists(output_dir_path):
+            os.makedirs(output_dir_path)
+        # plot adversarial image
+        vutils.save_image(adv_x.data, save_path, normalize=True)
        
         masked_patch = torch.mul(mask, patch)
         patch = masked_patch.data.cpu().numpy()
@@ -274,13 +265,9 @@ def attack(x, patch, mask):
  
         out = F.softmax(netClassifier(adv_x))
         target_prob = out.data[0][target]
-        #y_argmax_prob = out.data.max(1)[0][0]
-        
-        #print(count, conf_target, target_prob, y_argmax_prob)  
 
         if count >= opt.max_count:
             break
-
 
     return adv_x, mask, patch 
 
