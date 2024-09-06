@@ -96,7 +96,7 @@ def train(epoch, args, device):
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         inputs, targets = inputs.to(device), targets.to(device)
         inputs = atk(inputs, targets)
-        inputs = norm(inputs)
+        inputs = norm(inputs)       
         optimizer.zero_grad()
         if args.arch == "inception_v3":
             # InceptionV3 有两个输出，需要分别计算损失
@@ -155,7 +155,7 @@ def test(epoch, args, device):
         }
         if not os.path.isdir('checkpoint'):
             os.mkdir('checkpoint')
-        torch.save(state, f'./checkpoint/{args.arch}.pth')
+        torch.save(state, f'./checkpoint/at_train/{args.arch}.pth')
         best_acc = acc
 
 
@@ -191,8 +191,10 @@ if __name__ == "__main__":
     optimizer = optim.SGD(net.parameters(), lr=args.lr,
                         momentum=0.9, weight_decay=5e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
-
+    print(start_epoch)
     for epoch in range(start_epoch, args.epoch):
         train(epoch, args, device)
         test(epoch, args, device)
         scheduler.step()
+    
+    

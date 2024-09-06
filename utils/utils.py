@@ -31,7 +31,7 @@ import argparse
 from torchvision.models import *
 from .custom_dataset import CustomDataset
 from timm import create_model
-
+import shutil
 def get_mean_and_std(dataset):
     '''Compute the mean and std value of dataset.'''
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=2)
@@ -62,7 +62,8 @@ def init_params(net):
                 init.constant(m.bias, 0)
 
 
-_, term_width = os.popen('stty size', 'r').read().split()
+# _, term_width = os.popen('stty size', 'r').read().split()
+_, term_width = shutil.get_terminal_size()
 term_width = int(term_width)
 
 TOTAL_BAR_LENGTH = 65.
@@ -273,12 +274,12 @@ def get_parser():
     parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
     parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
     parser.add_argument('--arch', default="resnet18", type=str,help='the network architecture')
-    parser.add_argument('--gpu', default="0", type=str, help='which gpus are available')
+    parser.add_argument('--gpu', default="1", type=str, help='which gpus are available')
     parser.add_argument('--epoch', default=200, type=int, help='how many epoch to train')
     parser.add_argument('--batch_size', default=128, type=int, help='batch size')
     parser.add_argument('--num_worker', default=8, type=int, help='number of workers')
-    parser.add_argument('--train_set', default='/data/hdd3/duhao/data/datasets/attack_dataset/phase1/train_set', type=str, help='train set path')
-    parser.add_argument('--test_set', default='/data/hdd3/duhao/data/datasets/attack_dataset/phase1/test_set', type=str, help='test set path')
+    parser.add_argument('--train_set', default='/data2/huhongx/adversarial_competition/attack_dataset/phase1/train_set', type=str, help='train set path')
+    parser.add_argument('--test_set', default='/data2/huhongx/adversarial_competition/attack_dataset/phase1/test_set', type=str, help='test set path')
     args = parser.parse_args()
     return args
 

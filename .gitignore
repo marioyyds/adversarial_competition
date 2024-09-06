@@ -1,6 +1,7 @@
 *pycache*
 *.pth
 *checkpoint*
+实验.md
 log
 logs
 data

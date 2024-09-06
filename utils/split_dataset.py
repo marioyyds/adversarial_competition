@@ -3,11 +3,11 @@ import shutil
 import random
 
 # 设置路径
-data_dir = '/data/hdd3/duhao/data/datasets/attack_dataset/train'  # 你的数据集主文件夹
-train_dir = '/data/hdd3/duhao/data/datasets/attack_dataset/phase1/train_set'  # 用于保存训练集的文件夹
-test_dir = '/data/hdd3/duhao/data/datasets/attack_dataset/phase1/test_set'    # 用于保存测试集的文件夹
+data_dir = '/data3/huhongx/adversarial_competition/attack_dataset/train'  # 你的数据集主文件夹
+train_dir = '/data3/huhongx/adversarial_competition/attack_dataset/phase1/train_set'  # 用于保存训练集的文件夹
+test_dir = '/data3/huhongx/adversarial_competition/attack_dataset/phase1/test_set'    # 用于保存测试集的文件夹
 
-# 创建训练集和测试集文件夹
+# 创建训练集和测试集文件夹dc
 os.makedirs(train_dir, exist_ok=True)
 os.makedirs(test_dir, exist_ok=True)
 

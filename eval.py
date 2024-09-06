@@ -47,7 +47,12 @@ if __name__ == "__main__":
     # Load checkpoint.
     print('==> Resuming from checkpoint..')
     assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
-    checkpoint = torch.load(f'./checkpoint/{args.arch}.pth')
+    if os.path.isfile(f'./checkpoint/{args.arch}.pth'):
+        checkpoint = torch.load(f'./checkpoint/{args.arch}.pth')
+    elif os.path.isfile(f'./checkpoint/at_train/{args.arch}.pth'):
+        checkpoint = torch.load(f'./checkpoint/at_train/{args.arch}.pth')
+    else:
+        raise ValueError("权重不存在！")
     net.load_state_dict(checkpoint['net'])
     net.eval()
 
