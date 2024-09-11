@@ -276,10 +276,14 @@ def get_parser():
     parser.add_argument('--arch', default="resnet18", type=str,help='the network architecture')
     parser.add_argument('--gpu', default="1", type=str, help='which gpus are available')
     parser.add_argument('--epoch', default=200, type=int, help='how many epoch to train')
-    parser.add_argument('--batch_size', default=128, type=int, help='batch size')
-    parser.add_argument('--num_worker', default=8, type=int, help='number of workers')
+    parser.add_argument('--batch_size', default=16, type=int, help='batch size')
+    parser.add_argument('--num_worker', default=2, type=int, help='number of workers')
     parser.add_argument('--train_set', default='/data2/huhongx/adversarial_competition/attack_dataset/phase1/train_set', type=str, help='train set path')
     parser.add_argument('--test_set', default='/data2/huhongx/adversarial_competition/attack_dataset/phase1/test_set', type=str, help='test set path')
+    parser.add_argument('--origin_sample_path', default='/data/hdd3/duhao/data/datasets/attack_dataset/clean_cls_samples', type=str, help='origin sample path')
+    parser.add_argument('--attack_sample_path', default='/data/hdd3/duhao/code/adversarial_competition/adv_samples', type=str, help='attack sample path')
+    parser.add_argument('--sample_type', default=1, type=int, help='attack sample path')
+
     args = parser.parse_args()
     return args
 
@@ -381,7 +385,7 @@ def get_architecture(arch, device):
         model = googlenet()
         model.fc = nn.Linear(model.fc.in_features, 20)
     else:
-        model = create_model(arch, pretrained=True, num_classes=20)
+        model = create_model(arch, pretrained=False, num_classes=20)
 
     if device == 'cuda':
         model = torch.nn.DataParallel(model)

@@ -13,6 +13,7 @@ from torchvision.datasets.folder import default_loader
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from torchvision.utils import save_image
 from tqdm import tqdm
+from utils import get_parser
 
 os.environ['TORCH_HOME']='~/.cache/torch/'
 
@@ -25,24 +26,25 @@ class CustomDataset(datasets.ImageFolder):
                  is_valid_file: Union[Callable[[str], bool], None] = None, 
                  num_threads: int = 32):
         super().__init__(root, transform, target_transform, loader, is_valid_file)
-        self.data = []
-        self.num_threads = num_threads
-        self._load_data()
+        self.data = self.imgs
+    #     self.data = []
+    #     self.num_threads = num_threads
+    #     self._load_data()
     
-    def _load_data(self):
-        with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
-            futures = {executor.submit(self.loader, sample_path): (target, sample_path) for sample_path, target in self.samples}
-            for future in as_completed(futures):
-                img = future.result()
-                target = futures[future]
-                self.data.append((img, target))
+    # def _load_data(self):
+    #     with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
+    #         futures = {executor.submit(self.loader, sample_path): (target, sample_path) for sample_path, target in self.samples}
+    #         for future in as_completed(futures):
+    #             img = future.result()
+    #             target = futures[future]
+    #             self.data.append((img, target))
     
     def __len__(self) -> int:
         return super().__len__()
     
     def __getitem__(self, index: int) -> Tuple[Any, int]:
 
-        return self.transform(self.data[index][0]), self.data[index][1]
+        return self.transform(default_loader(self.data[index][0])), self.data[index]
 
 class Normalize(nn.Module):
     def __init__(self, mean, std) :
@@ -98,9 +100,11 @@ def normalize_by_pnorm(x, p=2, small_constant=1e-6):
     return x / norm
 
 if __name__ == '__main__':
-    clean_cls_samples_path = "/data2/huhongx/adversarial_competition/attack_dataset/clean_cls_samples"
+    args = get_parser()
+    clean_cls_samples_path = args.origin_sample_path
+    adv_samples_path = args.attack_sample_path
     dataset = CustomDataset(clean_cls_samples_path, transform=transforms.ToTensor())
-    data_loader = torch.utils.data.DataLoader(dataset, batch_size=16, shuffle=False, num_workers=4)
+    data_loader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_worker)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     print("Model to generate adv examples")
@@ -147,7 +151,7 @@ if __name__ == '__main__':
         model_list=model_list, input_size=model_input_size, prob=0.7, mode="nearest").cuda()
     eval_model.eval()
 
-    for inputs, (targets, path) in tqdm(data_loader):
+    for inputs, (path, targets) in tqdm(data_loader):
         inputs, targets = inputs.cuda(), targets.cuda()
         batch_size = inputs.shape[0]
 
@@ -217,7 +221,7 @@ if __name__ == '__main__':
         output_data = X_pgd.clone()
 
         for img, save_path in zip(output_data, path):
-            save_path = save_path.replace("clean_cls_samples", "adv_samples")
+            save_path = save_path.replace(clean_cls_samples_path, adv_samples_path)
             output_dir_path = os.path.dirname(save_path)
             if not os.path.exists(output_dir_path):
                 os.makedirs(output_dir_path)
