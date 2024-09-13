@@ -51,6 +51,7 @@ COPY /models /adversarial_competition/models
 COPY /ensemble_attack.py /adversarial_competition/ensemble_attack.py
 COPY /requirements.txt /adversarial_competition/requirements.txt
 COPY /checkpoint /adversarial_competition/checkpoint
+COPY /docs/算法技术方案.doc /doc/算法技术方案.doc
 
 # 配置终端的工作目录（选手需修改）
 WORKDIR /adversarial_competition
